@@ -5,9 +5,10 @@ Pocus - PHP Package Installer and Bin Script Runner
 This script allows you to:
 1. Install PHP packages with the correct PHP version
 2. Run bin scripts from installed packages
+3. Download and install packages directly from GitHub repositories
 
 Examples:
-    # Install a package
+    # Install a package from Packagist
     python main.py phpstan/phpstan
 
     # Install a package and run a bin script
@@ -15,6 +16,9 @@ Examples:
 
     # Run a bin script from an already installed package
     python main.py phpstan/phpstan phpstan analyse --level=5 src/
+
+    # Install a package from GitHub (downloads the repository archive)
+    python main.py https://github.com/phpstan/phpstan phpstan analyse src/
 """
 
 import os
@@ -51,9 +55,112 @@ def is_github_url(input_string):
     """
     return input_string.startswith("https://github.com/") or input_string.startswith("http://github.com/")
 
+def download_github_repository_archive(github_url, target_dir):
+    """
+    Download a GitHub repository as an archive and extract it.
+
+    Args:
+        github_url (str): The GitHub repository URL
+        target_dir (str): The directory to extract the repository to
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        import shutil
+        import tempfile
+        import zipfile
+
+        # Clear the target directory if it exists and has content
+        if os.path.exists(target_dir) and os.listdir(target_dir):
+            print(f"Clearing existing directory: {target_dir}")
+            for item in os.listdir(target_dir):
+                item_path = os.path.join(target_dir, item)
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                else:
+                    os.remove(item_path)
+
+        # Parse the GitHub URL to get the username and repository name
+        # Example: https://github.com/username/repo -> username/repo
+        parts = github_url.rstrip('/').split('github.com/')
+        if len(parts) != 2:
+            print(f"Error: Invalid GitHub URL format: {github_url}")
+            return False
+
+        repo_path = parts[1]
+
+        # Construct the archive URL (using ZIP format)
+        # We'll try 'main' branch first, then 'master' if that fails
+        archive_url = f"https://github.com/{repo_path}/archive/refs/heads/main.zip"
+
+        # Create a temporary directory to download the archive
+        with tempfile.TemporaryDirectory() as temp_dir:
+            archive_path = os.path.join(temp_dir, "repo.zip")
+
+            # Download the archive
+            print(f"Downloading repository archive from {archive_url}...")
+            try:
+                response = requests.get(archive_url, stream=True)
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    # Try 'master' branch if 'main' branch doesn't exist
+                    archive_url = f"https://github.com/{repo_path}/archive/refs/heads/master.zip"
+                    print(f"Main branch not found, trying master branch: {archive_url}")
+                    response = requests.get(archive_url, stream=True)
+                    response.raise_for_status()
+                else:
+                    raise
+
+            # Save the archive
+            with open(archive_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            # Extract the archive
+            print(f"Extracting repository archive to {target_dir}...")
+            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                # Get the name of the root directory in the archive
+                root_dir = zip_ref.namelist()[0].split('/')[0]
+
+                # Extract to the temporary directory first
+                zip_ref.extractall(temp_dir)
+
+                # Move the contents to the target directory
+                extracted_dir = os.path.join(temp_dir, root_dir)
+
+                # Create the target directory if it doesn't exist
+                os.makedirs(target_dir, exist_ok=True)
+
+                # Copy the contents to the target directory
+                for item in os.listdir(extracted_dir):
+                    s = os.path.join(extracted_dir, item)
+                    d = os.path.join(target_dir, item)
+                    if os.path.isdir(s):
+                        shutil.copytree(s, d, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(s, d)
+
+        print(f"Successfully downloaded and extracted repository to {target_dir}")
+
+        # Check if composer.json exists in the extracted repository
+        composer_json_path = os.path.join(target_dir, 'composer.json')
+        if not os.path.exists(composer_json_path):
+            print(f"Error: composer.json not found in the repository")
+            return False
+
+        return True
+    except Exception as e:
+        print(f"Error downloading GitHub repository archive: {e}")
+        return False
+
 def download_composer_json_from_github(github_url, target_path):
     """
     Download composer.json from a GitHub repository.
+
+    This function is kept for backward compatibility.
+    It's recommended to use download_github_repository_archive instead.
 
     Args:
         github_url (str): The GitHub repository URL
@@ -215,14 +322,20 @@ def main():
     This function:
     1. Parses command-line arguments
     2. Installs the specified PHP package if not already installed
+       - For GitHub URLs, downloads the repository archive
+       - For package names, creates a composer.json with the package requirement
     3. Executes the specified bin script with the correct PHP version
 
     Example usage:
+        # Install a package from Packagist
         python main.py phpstan/phpstan phpstan analyse src/
+
+        # Install a package from GitHub (downloads the repository archive)
+        python main.py https://github.com/phpstan/phpstan phpstan analyse src/
     """
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Install PHP packages using specific PHP versions and run bin scripts')
-    parser.add_argument('package', help='PHP package name (vendor/package) or GitHub URL')
+    parser.add_argument('package', help='PHP package name (vendor/package) or GitHub URL (for GitHub URLs, the repository archive will be downloaded)')
     parser.add_argument('bin_script', nargs='?', help='Bin script to execute (e.g., phpstan)')
     parser.add_argument('script_args', nargs=argparse.REMAINDER, help='Arguments to pass to the bin script')
     args = parser.parse_args()
@@ -246,12 +359,12 @@ def main():
     php_version = None
 
     if is_github_url(package_input):
-        # For GitHub URLs, download composer.json as before
-        if not download_composer_json_from_github(package_input, composer_json_path):
-            print("Failed to download composer.json from GitHub")
+        # For GitHub URLs, download the repository archive
+        if not download_github_repository_archive(package_input, package_dir):
+            print("Failed to download GitHub repository archive")
             return
 
-        # Read PHP version requirement from downloaded composer.json
+        # Read PHP version requirement from composer.json in the extracted repository
         try:
             php_version = PhpInstaller.read_composer_json(composer_json_path)
             print(f"Found PHP version requirement: {php_version}")
