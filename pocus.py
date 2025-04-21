@@ -6,6 +6,7 @@ This script allows you to:
 1. Install PHP packages with the correct PHP version
 2. Run bin scripts from installed packages
 3. Download and install packages directly from GitHub repositories
+4. Run PHP files using the installed PHP version
 
 Examples:
     # Install a package from Packagist
@@ -19,10 +20,12 @@ Examples:
 
     # Install a package from GitHub (downloads the repository archive)
     python main.py https://github.com/phpstan/phpstan phpstan analyse src/
+
+    # Run a PHP file using the installed PHP version
+    python main.py phpstan/phpstan script.php arg1 arg2
 """
 
 import os
-import sys
 import hashlib
 import argparse
 import requests
@@ -317,14 +320,16 @@ def run_composer_install(package_dir, php_binary_path, composer_path):
 
 def main():
     """
-    Main function to handle package installation and bin script execution.
+    Main function to handle package installation, bin script execution, and PHP file execution.
 
     This function:
     1. Parses command-line arguments
     2. Installs the specified PHP package if not already installed
        - For GitHub URLs, downloads the repository archive
        - For package names, creates a composer.json with the package requirement
-    3. Executes the specified bin script with the correct PHP version
+    3. Executes the specified bin script or PHP file with the correct PHP version
+       - If the second argument ends with .php, it's treated as a PHP file
+       - Otherwise, it's treated as a bin script from the vendor/bin directory
 
     Example usage:
         # Install a package from Packagist
@@ -332,12 +337,15 @@ def main():
 
         # Install a package from GitHub (downloads the repository archive)
         python main.py https://github.com/phpstan/phpstan phpstan analyse src/
+
+        # Run a PHP file using the installed PHP version
+        python main.py phpstan/phpstan script.php arg1 arg2
     """
     # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Install PHP packages using specific PHP versions and run bin scripts')
+    parser = argparse.ArgumentParser(description='Install PHP packages using specific PHP versions and run bin scripts or PHP files')
     parser.add_argument('package', help='PHP package name (vendor/package) or GitHub URL (for GitHub URLs, the repository archive will be downloaded)')
-    parser.add_argument('bin_script', nargs='?', help='Bin script to execute (e.g., phpstan)')
-    parser.add_argument('script_args', nargs=argparse.REMAINDER, help='Arguments to pass to the bin script')
+    parser.add_argument('bin_script', nargs='?', help='Bin script to execute (e.g., phpstan) or PHP file to run (e.g., script.php)')
+    parser.add_argument('script_args', nargs=argparse.REMAINDER, help='Arguments to pass to the bin script or PHP file')
     args = parser.parse_args()
 
     # Get the package name or GitHub URL
@@ -412,12 +420,63 @@ def main():
             # Run composer install
             run_composer_install(package_dir, php_binary_path, composer_path)
 
-        # Execute bin script if specified
+        # Execute bin script or PHP file if specified
         if args.bin_script:
-            execute_bin_script(package_dir, php_binary_path, args.bin_script, args.script_args)
+            if args.bin_script.endswith('.php'):
+                # It's a PHP file
+                execute_php_file(package_dir, php_binary_path, args.bin_script, args.script_args)
+            else:
+                # It's a bin script
+                execute_bin_script(package_dir, php_binary_path, args.bin_script, args.script_args)
     except Exception as e:
         print(f"Error: {e}")
         return
+
+def execute_php_file(package_dir, php_binary_path, php_file, script_args):
+    """
+    Execute a PHP file using the installed PHP version.
+
+    Args:
+        package_dir (str): The package directory
+        php_binary_path (str): Path to the PHP binary
+        php_file (str): Path to the PHP file to execute (relative to the current directory)
+        script_args (list): Arguments to pass to the PHP file
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Get the absolute path of the PHP file
+        php_file_path = os.path.abspath(php_file)
+
+        # Check if the PHP file exists
+        if not os.path.exists(php_file_path):
+            print(f"Error: PHP file '{php_file}' not found")
+            return False
+
+        # Make sure the PHP binary is executable
+        os.chmod(php_binary_path, 0o755)
+
+        # Change to the package directory
+        os.chdir(package_dir)
+
+        # Prepare the command
+        command = [php_binary_path, php_file_path] + script_args
+
+        print(f"Executing: {' '.join(command)}")
+
+        # Execute the PHP file
+        process = subprocess.Popen(command)
+        process.wait()
+
+        if process.returncode != 0:
+            print(f"PHP file execution failed with return code {process.returncode}")
+            return False
+
+        return True
+    except Exception as e:
+        print(f"Error executing PHP file: {e}")
+        return False
 
 def execute_bin_script(package_dir, php_binary_path, bin_script, script_args):
     """
