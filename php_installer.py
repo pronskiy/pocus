@@ -4,11 +4,7 @@ import os
 import platform
 import tarfile
 import json
-import urllib.request
-import ssl
-import shutil
 from pathlib import Path
-from pprint import pprint
 import requests
 
 
@@ -231,10 +227,6 @@ def main():
         print("Please make sure your composer.json file has a valid 'require' section with a 'php' entry.")
         return
 
-    # Paths for download and extraction
-    download_path = os.path.join(current_dir, 'downloads/')
-    bin_dir = os.path.join(current_dir, 'bin/')
-
     # Normalize PHP version
     normalized_version = PhpInstaller.normalize_php_version(php_version)
     if normalized_version != php_version:
@@ -245,14 +237,27 @@ def main():
     machine = platform.machine()
     print(f"Detected system: {system} ({machine})")
 
+    # Set up paths in ~/.pocus directory
+    home_dir = str(Path.home())
+    pocus_dir = os.path.join(home_dir, '.pocus')
+    version_dir = os.path.join(pocus_dir, normalized_version)
+    download_path = os.path.join(pocus_dir, 'downloads')
+    bin_dir = version_dir
+
     # Download PHP binary
     try:
+        # Check if PHP binary already exists
+        php_binary_path = os.path.join(bin_dir, 'php')
+        if os.path.exists(php_binary_path):
+            print(f"PHP {normalized_version} is already downloaded at {bin_dir}")
+            print(f"PHP binary path: {php_binary_path}")
+            return
+
         print(f"Downloading PHP {normalized_version}...")
         PhpInstaller.download_php(php_version, download_path, bin_dir)
         print(f"Successfully downloaded PHP {normalized_version} to {bin_dir}")
         print(f"PHP binary path: {os.path.join(bin_dir, 'php')}")
     except Exception as e:
-        pprint(e)
         print(f"Error downloading PHP: {e}")
         print("\nTroubleshooting suggestions:")
         print("1. Check your internet connection")
