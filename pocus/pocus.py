@@ -32,7 +32,7 @@ import requests
 import json
 import subprocess
 from pathlib import Path
-from php_installer import PhpInstaller
+from pocus.php_installer import PhpInstaller
 
 def generate_hash(input_string):
     """
