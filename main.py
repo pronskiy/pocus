@@ -1,4 +1,21 @@
 #!/usr/bin/env python3
+"""
+Pocus - PHP Package Installer and Bin Script Runner
+
+This script allows you to:
+1. Install PHP packages with the correct PHP version
+2. Run bin scripts from installed packages
+
+Examples:
+    # Install a package
+    python main.py phpstan/phpstan
+
+    # Install a package and run a bin script
+    python main.py phpstan/phpstan phpstan analyse src/
+
+    # Run a bin script from an already installed package
+    python main.py phpstan/phpstan phpstan analyse --level=5 src/
+"""
 
 import os
 import sys
@@ -171,9 +188,9 @@ def run_composer_install(package_dir, php_binary_path, composer_path):
         os.chdir(package_dir)
 
         # Run the composer install command
-        print(f"Running 'php composer.phar install' in {package_dir}...")
+        print(f"Running 'php composer.phar install --no-dev ' in {package_dir}...")
         result = subprocess.run(
-            [php_binary_path, composer_path, "install"],
+            [php_binary_path, composer_path, "--no-dev", "install"],
             capture_output=True,
             text=True
         )
@@ -193,11 +210,21 @@ def run_composer_install(package_dir, php_binary_path, composer_path):
 
 def main():
     """
-    Main function to handle package installation.
+    Main function to handle package installation and bin script execution.
+
+    This function:
+    1. Parses command-line arguments
+    2. Installs the specified PHP package if not already installed
+    3. Executes the specified bin script with the correct PHP version
+
+    Example usage:
+        python main.py phpstan/phpstan phpstan analyse src/
     """
     # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Install PHP packages using specific PHP versions')
+    parser = argparse.ArgumentParser(description='Install PHP packages using specific PHP versions and run bin scripts')
     parser.add_argument('package', help='PHP package name (vendor/package) or GitHub URL')
+    parser.add_argument('bin_script', nargs='?', help='Bin script to execute (e.g., phpstan)')
+    parser.add_argument('script_args', nargs=argparse.REMAINDER, help='Arguments to pass to the bin script')
     args = parser.parse_args()
 
     # Get the package name or GitHub URL
@@ -264,11 +291,66 @@ def main():
         # Ensure Composer is downloaded
         PhpInstaller.download_composer(pocus_dir)
 
-        # Run composer install
-        run_composer_install(package_dir, php_binary_path, composer_path)
+        # Check if package is already installed
+        vendor_dir = os.path.join(package_dir, 'vendor')
+        if os.path.exists(vendor_dir) and os.path.isdir(vendor_dir):
+            print(f"Package appears to be already installed in {package_dir}")
+        else:
+            # Run composer install
+            run_composer_install(package_dir, php_binary_path, composer_path)
+
+        # Execute bin script if specified
+        if args.bin_script:
+            execute_bin_script(package_dir, php_binary_path, args.bin_script, args.script_args)
     except Exception as e:
         print(f"Error: {e}")
         return
+
+def execute_bin_script(package_dir, php_binary_path, bin_script, script_args):
+    """
+    Execute a bin script from the installed package.
+
+    Args:
+        package_dir (str): The package directory
+        php_binary_path (str): Path to the PHP binary
+        bin_script (str): Name of the bin script to execute
+        script_args (list): Arguments to pass to the bin script
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Check if the bin script exists in the vendor/bin directory
+        bin_dir = os.path.join(package_dir, 'vendor', 'bin')
+        bin_script_path = os.path.join(bin_dir, bin_script)
+
+        if not os.path.exists(bin_script_path):
+            print(f"Error: Bin script '{bin_script}' not found in {bin_dir}")
+            return False
+
+        # Make sure the PHP binary is executable
+        os.chmod(php_binary_path, 0o755)
+
+        # Change to the package directory
+        os.chdir(package_dir)
+
+        # Prepare the command
+        command = [php_binary_path, bin_script_path] + script_args
+
+        print(f"Executing: {' '.join(command)}")
+
+        # Execute the bin script
+        process = subprocess.Popen(command)
+        process.wait()
+
+        if process.returncode != 0:
+            print(f"Bin script execution failed with return code {process.returncode}")
+            return False
+
+        return True
+    except Exception as e:
+        print(f"Error executing bin script: {e}")
+        return False
 
 if __name__ == "__main__":
     main()

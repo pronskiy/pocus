@@ -125,6 +125,13 @@ class PhpInstaller:
         ]
         available_versions.reverse()  # Reverse to get latest versions first
 
+        # Handle double version constraints like "^7.4|^8.0"
+        if '|' in php_version:
+            # Split by | and use the upper version (last one)
+            constraints = php_version.split('|')
+            # Use the last constraint (upper version)
+            return PhpInstaller.normalize_php_version(constraints[-1].strip())
+
         # Simple version matching for now
         # This is a simplified version of Composer's version parser
         # For more complex constraints, we would need a more sophisticated parser
