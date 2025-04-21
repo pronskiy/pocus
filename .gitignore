@@ -1,0 +1,4 @@
+/bin
+/downloads
+*.php
+composer.json
