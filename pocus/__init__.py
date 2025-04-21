@@ -9,6 +9,6 @@ This package allows you to:
 """
 
 from pocus.php_installer import PhpInstaller
-from pocus.main import main, execute_bin_script, execute_php_file
+from pocus.pocus import main, execute_bin_script, execute_php_file
 
 __all__ = ['PhpInstaller', 'main', 'execute_bin_script', 'execute_php_file']
