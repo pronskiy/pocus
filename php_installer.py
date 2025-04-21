@@ -183,6 +183,38 @@ class PhpInstaller:
             f.write(r.content)
 
     @staticmethod
+    def download_composer(pocus_dir):
+        """
+        Download the latest stable version of Composer if it doesn't already exist.
+
+        Args:
+            pocus_dir (str): Path to the .pocus directory
+
+        Returns:
+            bool: True if successful or already exists
+        """
+        composer_url = "https://getcomposer.org/download/latest-stable/composer.phar"
+        composer_path = os.path.join(pocus_dir, "composer.phar")
+
+        # Check if Composer already exists
+        if os.path.exists(composer_path):
+            print(f"Composer is already downloaded at {composer_path}")
+            return True
+
+        # Create directory if it doesn't exist
+        os.makedirs(pocus_dir, exist_ok=True)
+
+        # Download Composer
+        print(f"Downloading Composer from {composer_url}...")
+        try:
+            PhpInstaller.download(composer_url, composer_path)
+            print(f"Successfully downloaded Composer to {composer_path}")
+            return True
+        except Exception as e:
+            print(f"Error downloading Composer: {e}")
+            return False
+
+    @staticmethod
     def read_composer_json(composer_json_path):
         """
         Read composer.json and extract PHP version requirement.
@@ -251,12 +283,14 @@ def main():
         if os.path.exists(php_binary_path):
             print(f"PHP {normalized_version} is already downloaded at {bin_dir}")
             print(f"PHP binary path: {php_binary_path}")
-            return
+        else:
+            print(f"Downloading PHP {normalized_version}...")
+            PhpInstaller.download_php(php_version, download_path, bin_dir)
+            print(f"Successfully downloaded PHP {normalized_version} to {bin_dir}")
+            print(f"PHP binary path: {os.path.join(bin_dir, 'php')}")
 
-        print(f"Downloading PHP {normalized_version}...")
-        PhpInstaller.download_php(php_version, download_path, bin_dir)
-        print(f"Successfully downloaded PHP {normalized_version} to {bin_dir}")
-        print(f"PHP binary path: {os.path.join(bin_dir, 'php')}")
+        # Download Composer
+        PhpInstaller.download_composer(pocus_dir)
     except Exception as e:
         print(f"Error downloading PHP: {e}")
         print("\nTroubleshooting suggestions:")
